@@ -6,3 +6,5 @@ spark-warehouse/
 node_modules/
 # hocanın yönergesi — yalnızca yerel kopya, açık depoya konmaz
 docs/Proje-Odevi.pdf
+# hocanın ders notları — yalnızca yerel kopya
+docs/ders-notlari/

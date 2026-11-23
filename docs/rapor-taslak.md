@@ -41,7 +41,66 @@
 *Ne kurduk ve en önemli üç bulgu en son yazılacak.*
 
 ## 3. Mimari — Z0
-*(A5)*
+
+> **Taslak (A5, 2026-11-23).** "?" işaretli yerler ilgili adımda ölçülüp doldurulacak (yönerge Adım 5); son hâli Adım 15'te.
+
+**Şekil 3.1 — Omurga şeması (H1 §12) bizim sistemimiz için**
+
+```
+ ①Olay kaynağı          ②Toplama               ③Günlük/Kuyruk          ④Akış işleme                ⑦Servis deposu      ⑧Sunum
+ uretici.py ──────────▶ Kafka üretici ───────▶ Kafka 4.0.0 (KRaft) ──▶ Spark 3.5.3 Structured ──▶ MongoDB 7.0 ──────▶ Portal
+ (--sablon haber,        acks=all,              konu: haberler           Streaming                   gündem, kategori    FastAPI + React
+  --grup G231210017)     idempotent              bölüm: ? (A11)           pencere: ? watermark: ?     hızı, uyarılar      (/api/gundem,
+      │                                         anahtar: kaynak (?)      (A11)                       (A9)                 /api/news)
+      │                                                                                                    ▲                  ▲
+      │  --toplu                                                                                           │                  │
+      └───────────────▶ ⑤Ham depolama ─────────▶ ⑥Toplu işleme ───────────────────────────────────────────┤                  │
+                        SeaweedFS 4.48 (S3)      Spark 3.5.3 + Delta 3.2.1                                  │                  │
+                        s3://ham/haber/          temizleme → kaynaklar.csv join → toplulaştırma             │                  │
+                        tarih=…/ (JSON)          → s3://tablolar (Delta) ────────────────────────────────────┘                  │
+                                                 → Elasticsearch 8.15.3 (Türkçe analizör, A12) ─────────────────────────────────┘
+```
+
+| Kutu | Bileşen ve sürüm | Neden bu bileşen (şimdilik) | Karar adımı |
+|---|---|---|---|
+| ① Olay kaynağı | `araclar/uretici.py` (kit) | Yönerge: üreticiyi siz yazmazsınız | — |
+| ② Toplama | Kafka üretici istemcisi, `acks=all` + idempotent (kit varsayılanı) | Kayıp sınırı ≤ %0,1 → onaysız yazma (acks=0) riskli; bedeli ölçülecek | A11 |
+| ③ Kuyruk | Apache Kafka 4.0.0, KRaft (ZooKeeper yok) | Üretici hızlı/tüketici yavaşken tampon; aynı olayı birden çok tüketici okur (H1 §12) | A11: bölüm sayısı, anahtar |
+| ④ Akış işleme | Spark 3.5.3 Structured Streaming | Toplu hatla aynı motor ve DataFrame API'si; olay zamanı + watermark desteği | A11 |
+| ⑤ Ham depolama | SeaweedFS 4.48 (S3 uyumlu), JSON | Z1: 365 gün × 70,63 GB/gün = 25,78 TB → ucuz, büyüyen nesne deposu | A6: biçim, dizin düzeni |
+| ⑥ Toplu işleme | Spark 3.5.3 + Delta Lake 3.2.1 | Z1: tam tarama tek makinede 57,3 sa → paralel okuma; Delta = atomik teslim (H4 §6.4) | A8, A10 |
+| ⑦ Servis deposu | MongoDB 7.0 (akış sonuçları) · Elasticsearch 8.15.3 (arama) | Servis p99 ≤ 200 ms; "ihracatımızdan" araması Türkçe analizör ister | A9, A12 |
+| ⑧ Sunum | Portal: FastAPI + React | Canlı gösterim; Gemini özeti kapalı | P1–P2 |
+
+**Kit sadeleştirmesi (raporda açıkça belirtilecek):** gerçek sistemde ham kopya Kafka'dan S3'e bir
+bağlayıcıyla (ör. bir sink işi) akardı; kitte ham geçmiş veri `uretici.py --toplu` ile **doğrudan** S3'e
+yazılıyor. Yani ⑤'e giden ok bizde ②'den değil, ①'den çıkıyor.
+
+**Tablo 3.1 — Garanti tablosu (H3 §10: her ok için üç soru) — iskelet**
+
+| Ok | ① Kaç kopya (kit → üretim) | ② Sıra garantisi | ③ Ağ bölünürse | Teslim garantisi |
+|---|---|---|---|---|
+| ① → ② üretici → Kafka | 1 → 1 (istemci) | Bölüm içinde, idempotent üretici yeniden denemede sırayı korur | Üretici yeniden dener, zaman aşımında hata; **?** (A14 `docker compose stop kafka` deneyi) | Ağ kaynaklı tekrar engellenir (idempotent); uygulama tekrarı **engellenmez** (A3: 2 tekrar) |
+| ② → ③ Kafka konusu | 1 → 3, `min.insync.replicas=2` | Yalnızca **bölüm içinde**; anahtar=kaynak olduğu için kaynak içinde sıralı, kaynaklar arası sıra yok | `acks=all` + min ISR → çoğunluk yoksa yazma durur (**C** tarafı) | — |
+| ③ → ④ Kafka → Spark akış | Checkpoint 1 (S3) → **?** | Bölüm içinde; geç veri olay zamanına göre pencereye girer (watermark) | Tüketici bekler, sonra checkpoint'teki offset'ten devam | Checkpoint → en az bir kez; tam bir kez için idempotent yazma gerekir (**?** A11 yeniden başlatma deneyi) |
+| ④ → ⑦ Spark → MongoDB | 1 → 3 (replica set) | Yok | **?** (A9: yazma onayı `majority` mi?) | **?** (A11: upsert ile idempotent mi?) |
+| ① → ⑤ üretici → S3 ham | 1 → sağlayıcı/çoğaltma | Yok (günlük dosyalar) | **?** (A14 `docker compose stop s3` deneyi) | — |
+| ⑤ → ⑥ S3 → Spark toplu | — | Gerekmez (toplu) | İş başarısız olur, baştan çalıştırılır (ham veri duruyor, H1 §12) | Yeniden çalıştırılabilir; dönüşümler belirlenimci olmalı (H5 §11) |
+| ⑥ → Delta tablosu | 1 → 3 | — | Delta commit atomik: ya yeni sürüm ya eski sürüm (**?** A10 Ctrl+C deneyi) | Atomik teslim (Delta günlüğü) |
+| ⑥ → Elasticsearch | 1 düğüm, replika 0 → 3 düğüm, replika 1 | — | **?** (A12/A14: ES durunca portal ne gösteriyor?) | **?** (`haber_id` belge kimliği olursa tekrar = üzerine yazma) |
+| ⑦ → ⑧ servis → portal | — | — | **?** (A14: ES / Mongo kapalıyken portal) | — |
+
+**Tablo 3.2 — Kitin tek bilgisayar sadeleştirmeleri ve üretimde olması gereken**
+
+| Bileşen | Kitte | Üretimde | Neden |
+|---|---|---|---|
+| Kafka | 1 düğüm (KRaft, broker + controller aynı süreçte), replikasyon 1 | ≥ 3 aracı, replikasyon 3, `min.insync.replicas=2`; ayrı 3 controller | Tek düğüm ölürse veri gider; mutabakat için tek sayı (H3 §6) |
+| S3 (SeaweedFS) | 1 düğüm, çoğaltma yok | Çok düğümlü / bulut nesne deposu | Disk ölürse ham veri gider (H4) |
+| Spark | `local[*]`: Driver + tek Executor aynı süreç, 4 çekirdek; shuffle bölümü 8 | Küme yöneticisi (YARN/Kubernetes) + birçok Executor | H6 §1.2; gerçek shuffle ağdan geçer |
+| Elasticsearch | Tek düğüm, replika 0 | ≥ 3 düğüm, replika ≥ 1 | Kopya yok; düğüm ölürse indeks gider |
+| MongoDB | Tek `mongod` | 3 üyeli replica set; gerekirse shard | Tek hata noktası |
+| Güvenlik | Kapalı (şifre, TLS yok) | Kimlik doğrulama + TLS | Asla internete açık çalıştırılmaz |
+| Ham veri yolu | `uretici.py --toplu` doğrudan S3'e | Kafka → S3 bağlayıcısı | Tek kaynaktan iki yol (H1 §12) |
 
 ## 4. Ölçek ve eşik kararı — Z1
 
@@ -74,11 +133,30 @@ Hesap: 2.500 olay/s × 327 B = 817.500 B/s; × 86.400 s = 70,63 GB/gün; × 365 
 |---|---|---|
 | Aktarım — alım | Tepe 1,64 MB/s ↔ tek 1 Gb/s ağ kartı 125 MB/s | Rahat sığar (%1,3) |
 | Aktarım — geçmişi tarama | 25,78 TB ÷ 125 MB/s = **57,3 saat**; tek gün 9,4 dk | Toplu 2 ("konuların günler boyunca seyri") bütün yılı tararsa tek makinede 2,4 gün sürer → makul değil |
-| Bellek | Bir günlük ham veri 70,63 GB ↔ makinenin RAM'i 15,7 GB (Docker'a 8,17 GB) | Bir gün bile belleğe sığmaz; notlardaki 3–5× bellek çarpanıyla daha da kötü. Veri parça parça (Spark bölümleri, akış pencereleri) işlenmeli |
+| Bellek | Bir günlük ham veri 70,63 GB × 3–5 (H1: diskteki metin belleğe alınınca 3–5 kat şişer) = **212–353 GB** ↔ makinenin RAM'i 15,7 GB (Docker'a 8,17 GB) | Bir gün bile belleğe sığmaz (RAM'in 13,5–22,5 katı). Veri parça parça (Spark bölümleri, akış pencereleri) işlenmeli |
 | Depolama | 25,78 TB/yıl ↔ bu makinenin boş diski 360,8 GB | Disk **5,1 günde** dolar |
 | Hesaplama | Kelime sayma, gruplama: hafif işlemler | Darboğaz değil |
 
-**Karar.** Alım tek makineye rahat sığar; **ilk tıkanan aktarım ve depolamadır**, işlemci değil. 365 günlük
+*Neden 125 MB/s?* Ham veri S3'te, yani bir nesne deposunda durur ve ağ üzerinden okunur; bu yüzden payda
+yerel diskin hızı değil, ağın hızıdır (H1 §5: 1 Gb/s ağ ≈ 125 MB/s, sabit diskten bile yavaş).
+
+**Tablo 4.2 — H1 §7 "Tek makine 2026'da nereye kadar gider?" eşik tablosuna göre yerimiz**
+
+| Hangi veri | Boyut | H1 §7 bandı | Tablonun önerdiği |
+|---|---|---|---|
+| Bir dakikalık / bir saatlik akış penceresi | 2.500/s × 3.600 s × 327 B ≈ 2,94 GB (1 saat) | 1–10 GB | Tek makine; dağıtık gerekmez |
+| Bir günlük ham veri | 70,63 GB | 10–100 GB | Dizüstüne sığmaz; tek makinede diskten akıtarak (DuckDB/Polars) |
+| 365 günlük saklama | 25,78 TB, **sürekli büyüyor** | > birkaç TB, sürekli büyüyor | **Dağıtık sistem (Spark, dağıtık depolama)** |
+
+H1'in karar ağacı da aynı yere varır: "> birkaç TB → sürekli büyüyor mu? → evet → dağıtık sistem (şimdi gerekli)".
+Bellek satırı tablo için çarpanla birlikte okunmuştur (H1 §3: tablodaki "sığar" ifadeleri 3–5× çarpanı içerir).
+
+**Karar.** Alım tek makineye rahat sığar; **ilk tıkanan aktarım ve depolamadır**, işlemci değil.
+Tablo 4.2'nin ilk iki satırı COST dersini hatırlatır (H1 vaka notu): tek bir günün ya da pencerenin işi küme
+gerektirmez; dağıtık sistemi gerekli kılan **365 günlük, sürekli büyüyen geçmiştir**. Paralel okumanın kazancı
+da bu satırdadır (H1 §5, 3. ders): 25,78 TB 10 düğüme dağıtılıp her düğüm kendi payını paralel okursa tam
+tarama yaklaşık 57,3 / 10 ≈ 5,7 saate iner (Amdahl'ın saymadığı koordinasyon ve shuffle maliyeti hariç,
+yani iyimser alt sınır). 365 günlük
 saklama dağıtık, ucuz bir depo (nesne deposu, S3) ve geçmiş üzerindeki toplu işler için paralel okuma (Spark)
 gerektirir. H1'in "aktarım" satırındaki doğru çözüm de budur: aktarım hızı sabit, okunan baytı küçült —
 sütunlu biçim (Parquet), sıkıştırma, yalnızca gereken sütunu okumak (`baslik`, `olay_zamani`) ve tarih
@@ -102,7 +180,7 @@ bölümlemesiyle yalnızca ilgili günleri okumak. Kit tek makinede çalışır;
 
 **A3'ten gelen ön bulgu — Kafka anahtarı.** Üretici mesaj anahtarı olarak `kaynak` kullanıyor. Yalnızca 6 kaynak
 var ve `ajans-kuzey` mesajların %49,9'unu üretiyor. Varsayılan 3 bölümlü konuda bölüm dağılımı 293 / 819 / 390,
-en dolu bölüm ÷ ortalama = **1,64** (1.502 mesaj). Bu anahtarla bölüm sayısını artırmak dengeyi düzeltmez:
+en dolu bölüm ÷ ortalama = **1,64** (1.502 mesaj). H3 §11'in ölçütüne göre (> 1,5) bu bir **sıcak noktadır**. Bu anahtarla bölüm sayısını artırmak dengeyi düzeltmez:
 6 farklı anahtar en fazla 6 bölüm doldurur, en büyük kaynak tek bölümde kalır. A7/A11'de anahtar seçimi
 bu ölçümle tartışılacak.
 
