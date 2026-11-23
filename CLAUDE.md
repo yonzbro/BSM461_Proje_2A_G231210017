@@ -30,7 +30,7 @@ uretici.py ──▶ Kafka (haberler) ──▶ Spark Structured Streaming ─�
 - Toplu 1: Kaynak türüne göre (kaynaklar.csv join) hacim ve kategori dağılımı.
 - Toplu 2: Gündem konularının günler/saatler boyunca seyri.
 
-Ders notları: `docs/ders-notlari/H01–H07.pdf` (yerel, gitignore) · kararlara giren ölçütlerin özeti `docs/ders-notlari-ozet.md` — her kararda önce buna bak, atıfı "H3 §11" biçiminde ver.
+Ders notları: `docs/ders-notlari/H01–H06.pdf` (H07 BSM 461 notu yok; Downloads'taki H07 başka derse ait) (yerel, gitignore) · kararlara giren ölçütlerin özeti `docs/ders-notlari-ozet.md` — her kararda önce buna bak, atıfı "H3 §11" biçiminde ver.
 Rapor taslağı: `docs/rapor-taslak.md` (Bölüm 6 başlıklarıyla; her adımda ilgili bölüm doldurulur).
 
 ## Portal
@@ -75,7 +75,7 @@ Bitenleri [x] yap, tarih ve kısa not ekle.
 
 ### Aşama 2 — Depolama ve toplu (25–29 Kas)
 - [x] A6 (2026-11-23: 5M satır/14 gün; `is/a6_bicim.py` biçim+kodek 3 tur; `is/a6_kirli.py` kirli/tekrar/KVKK; taslak §4, §5.1, §5.2, §10.2. Kararlar: Parquet+gzip, `tarih=` düzeni) `--toplu` üretim; JSON/Parquet boyut ve sorgu süresi; snappy/zstd/gzip; S3 dizin düzeni ve dosya sayısı; kirli veri sayımı
-- [ ] A7 Bölüm anahtarı adayları (kaynak, kategori, tarih); en dolu ÷ ortalama; tuzlama önce/sonra; tekrar eden olay sayısı; CAP/PACELC
+- [x] A7 (2026-11-23: `is/a7_bolum.py`; taslak §6. Kaynak 4,43 sıcak; kaynak+tarih ile ardışık-süre işi 8,68→3,74 s, görev oranı 12,8→1,49; tekrar fazla sayma %0,207 > kart %0,1; CAP yol başına: alım PC/EC, sunum PA/EC) Bölüm anahtarı adayları (kaynak, kategori, tarih); en dolu ÷ ortalama; tuzlama önce/sonra; tekrar eden olay sayısı; CAP/PACELC
 - [ ] A8 Toplu iş: temizleme + kaynaklar.csv join + toplulaştırma; `explain` → `kanit/explain-1.txt` + yorum; Spark UI ekran görüntüsü; performans kararı (3 tekrar); kirli veri kararı; 2 grafik
 - [ ] A10 Delta: ikinci yazma, DESCRIBE HISTORY, versionAsOf, Ctrl+C atomiklik deneyi (Delta ile çıplak Parquet karşılaştırması)
 
@@ -105,4 +105,6 @@ Bitenleri [x] yap, tarih ve kısa not ekle.
 - **2026-11-23 · S3 düzeni: `tarih=YYYY-MM-DD/`.** Sorgular tarih aralıklı; kaynak çok çarpık (%49,9); kategori dosya sayısını 8× artırır. 14 dosya, compaction gerekmedi.
 - **2026-11-23 · Tekrar ayıklama birebir satıra göre yapılacak (A8).** haber_id'ye göre: 9.914 (3 kaçar) + 1.888 kimliksiz kayıt tek kayda çöker. Birebir satır: 9.917 = üreticinin sayısı.
 - **2026-11-23 · cache() dersi:** 1,6 GB'ı 1 GB sürücüde cache'lemek işi çökertti (kanit/kirilma-a6-cache-oom.log). Kitte büyük ara sonucu cache'leme.
+- **2026-11-23 · Spark'ta kaynak başına sıralı işler için bileşik anahtar (kaynak, tarih).** Ölçüm: 8,68→3,74 s, en uzun/ortanca görev 12,80→1,49; bedel 91 gün-aşırı aralık. Tuzlama sıralı işte anlamı bozar. Sayım/toplamda çözüm gerekmez (combiner).
+- **2026-11-23 · CAP yol başına:** alım (Kafka) C / PC-EC; sunum (Mongo/ES) A / PA-EC.
 - **Hipotez (karar değil, ölçülecek) · watermark:** kart 5 s uyarı ↔ 30 dk geç veri ↔ ≤ %0,1 kayıp çelişkisi. Öneri: `update` çıktı kipi + kısa tetikleyici (uyarı süresi için) + uzun watermark (kayıp sınırı için) + MongoDB upsert. Watermark süresi geç veri dağılımı ölçülünce belirlenecek.

@@ -1,6 +1,7 @@
 # Ders notlarından proje kararlarına giren ölçütler
 
-Kaynak: Dr. Öğr. Üyesi Sümeyye Kaynak, BSM 461 ders notları (H01–H07, 2026-2027 Güz). PDF'ler yerelde
+Kaynak: Dr. Öğr. Üyesi Sümeyye Kaynak, BSM 461 ders notları (H01–H06, 2026-2027 Güz; H07 BSM 461 notu henüz yok —
+İndirilenler'deki `H07-ders-notu.pdf` BSM 429 Veri Madenciliği'ne ait, kullanılmaz). PDF'ler yerelde
 `docs/ders-notlari/` altında (depoya konmaz). Raporda atıf: "H3 §11" gibi hafta + bölüm.
 
 | Konu | Ölçüt / kural | Kaynak | Bizde nerede |

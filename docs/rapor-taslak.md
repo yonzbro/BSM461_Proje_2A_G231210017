@@ -227,7 +227,70 @@ bir klasör bırakır ve okuyan iş hata vermeden eksik veri görür → Z7'de D
 *(A10)*
 
 ## 6. Bölümleme, çoğaltma, tutarlılık — Z3
-*(A7)*
+
+Ölçüm: `is/a7_bolum.py`, A6'daki 5.000.000 satırlık Parquet (temizlenmemiş). Bölüm dağılımı Spark'ın kendi
+shuffle kuralıyla hesaplandı — `pmod(hash(anahtar), 8)`, 8 = kitteki `spark.sql.shuffle.partitions` (H6 §4.4).
+Sıcak nokta ölçütü H3 §11: en dolu bölüm ÷ ortalama > 1,5.
+
+**Tablo 6.1 — Bölüm anahtarı adayları (8 bölüm)**
+
+| Aday | Farklı değer | En büyük anahtarın payı | En dolu ÷ ortalama | Boş kova | Durum |
+|---|---|---|---|---|---|
+| kaynak | 7 (6 + boş) | %50,9 | **4,43** | 4 / 8 | sıcak nokta |
+| kategori | 9 (8 + boş) | %22,0 | 1,98 | 2 / 8 | sıcak nokta |
+| tarih | 14 | %7,1 | 2,86 | 2 / 8 | sıcak nokta |
+| haber_id | 4.988.199 | ~%0 | **1,00** | 0 / 8 | dengeli |
+| kaynak + tarih | 98 | %3,6 | 1,77 | 0 / 8 | sıcak nokta (sınırda) |
+| kaynak # tuz (0–7) | 56 | — | 1,53 | 0 / 8 | sınırda |
+
+Notlar: kategori de çarpık (en büyük %22,0, eşit dağılımda %12,5 olurdu). Muhtemel neden: üretici grup koduna
+göre seçtiği 3 kaynağa birer tercihli kategori verir ve o kaynakların haberlerinin %60'ını oradan seçer
+(`uretici.py`); büyük bir kaynak bunlardan biriyse ağırlığı kategoriye taşınır — kaynak × kategori dağılımı
+A8'deki Toplu 1 sorgusunda ölçülecek. tarih'te günler eşit (357.142), ama bir kovaya 5
+gün düştü (5 ÷ 14 × 8 = 2,86). haber_id dengeli, ama sorgularımız haber_id ile gruplamaz. Tuz haber_id'den
+türetildi (rastgele değil, belirlenimci — H5 §11).
+
+**İki ders:** (1) "Hash anahtarları dağıtır, satırları değil" (H3 §3.2): kaynak'ta tek anahtar verinin yarısı,
+hiçbir hash onu bölemez (yarısı tek kovada, 8 kovanın 4'ü boş). (2) Az farklı değerli anahtar, değerleri eşit olsa bile dengelenmez: 14 günü 8 kovaya
+hash'le dağıtmak bir kovaya 5 gün verir. Denge için anahtarın kova sayısından **çok** fazla değeri olmalı.
+
+**Tablo 6.2 — Sıcak noktanın bedeli ve çözümü: kaynak başına ardışık haber arası süre (3 tur)**
+
+Bu iş combiner'la kurtarılamaz (H5 §6.1): pencere fonksiyonu bir kaynağın bütün satırlarını tek göreve toplayıp
+zamana göre sıralar. Görev süreleri Spark UI REST API'sinden (`taskSummary`, `executorRunTime`).
+
+| Bölüm anahtarı | Süre ort. | En uzun ÷ ortanca görev | Sonuç farkı |
+|---|---|---|---|
+| kaynak (önce) | 8,68 s | **12,80** | — |
+| kaynak + tarih (sonra) | **3,74 s** (2,3× hızlı) | **1,49** | 91 gün-aşırı aralık kayboldu (7 kaynak × 13 gün geçişi) |
+
+**Karar: kaynak başına sıralı işlerde bileşik anahtar (kaynak, tarih).** Tuzlama değil, çünkü tuz bir kaynağın
+satırlarını rastgele kovalara dağıtır ve "ardışık" kavramını bozar; sıralı işlerde tuzlama ancak ikinci bir
+birleştirme aşamasıyla çalışır (H5 §6.3). Bileşik anahtar anlamı korur, bedeli ölçülü ve küçüktür (91 aralık,
+5 milyon içinde). Kaynak başına **sayım/toplam** işlerinde ise çözüm gerekmez: combiner sıcak anahtarı map
+tarafında tek sayıya indirir (H5 §6.3). Kafka konusunun anahtarı ayrıca A11'de kararlaştırılacak (aynı çarpıklık,
+A3: bölüm dengesi 1,64).
+
+*Yan bulgu:* kaynak başına ortalama ardışık haber arası ajans-kuzey 0,48 s, ekonomi-gunluk 5,46 s; `kaynak`'ı
+boş kirli kayıtlar ortalama 603 s aralıkla geliyor — kirli kayıtların zamanda seyrek ve düzgün dağıldığını gösterir.
+
+**Tekrar sonucu değiştiriyor mu? Evet.** Ham 5.000.000 satır, birebir tekilleştirilmiş 4.990.083. Kategori
+sayımında en büyük fazla sayma **%0,207** (teknoloji: +1.048). Bu, kartın kabul ettiği **%0,1**'lik hata payının iki
+katı → toplu işte tekrarlar mutlaka ayıklanmalı (A8). Akışta aynı sorun teslim garantisi olarak çıkar (A11).
+
+**Çoğaltma (kit → üretim):** Tablo 3.2'de. Kitte her bileşen tek kopya; üretimde Kafka 3 kopya +
+`min.insync.replicas=2`, MongoDB 3 üyeli replica set, Elasticsearch replika ≥ 1, nesne deposu sağlayıcının
+çoğaltması. Neden 3: tek düğüm arızasında hem yazma hem okuma sürer ve çoğunluk tek sayıyla kurulur (H3 §4.3, §6).
+
+**Tutarlılık: bölünmede C mi, A mı? Tek cevap yok — yol başına ayrı karar** (H1 §9: "istek başına ayarlanabilen
+bir karar"):
+
+| Yol | Bölünmede | PACELC | Gerekçe |
+|---|---|---|---|
+| Alım: üretici → Kafka | **C** — yazma durur (`acks=all`, `min.insync.replicas=2`) | PC/EC | Kart: kayıp ≤ %0,1. Sessiz kayıp yerine durmak; normal zamanda da tüm kopyaları bekler, gecikmeyi öder |
+| Sunum: gündem paneli (MongoDB), arama (ES) | **A** — eski ama cevap | MongoDB varsayılan PA/EC (H3 §5.3) | Gündem listesinin birkaç saniye eski olması zararsız; panelin açılmaması zararlı (H1 §9 "beğeni sayısı" örneği) |
+
+Seçim bedelleri A11 (Kafka durunca ne olur, A14 deneyi) ve A9'da (MongoDB yazma onayı) ölçülecek.
 
 **A3'ten gelen ön bulgu — Kafka anahtarı.** Üretici mesaj anahtarı olarak `kaynak` kullanıyor. Yalnızca 6 kaynak
 var ve `ajans-kuzey` mesajların %49,9'unu üretiyor. Varsayılan 3 bölümlü konuda bölüm dağılımı 293 / 819 / 390,
