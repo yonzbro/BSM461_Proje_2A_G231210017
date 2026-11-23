@@ -4,3 +4,5 @@ __pycache__/
 spark-warehouse/
 .env
 node_modules/
+# hocanın yönergesi — yalnızca yerel kopya, açık depoya konmaz
+docs/Proje-Odevi.pdf
