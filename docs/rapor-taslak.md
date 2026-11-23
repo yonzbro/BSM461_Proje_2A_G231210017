@@ -117,7 +117,11 @@ için dersin sabiti kullanıldı: 1 Gb/s = 125 MB/s.
 | 100× | 250.000 | 500.000 | 81,75 | 163,50 | 21,6 milyar | 7.063,20 | 2,58 PB |
 
 Hesap: 2.500 olay/s × 327 B = 817.500 B/s; × 86.400 s = 70,63 GB/gün; × 365 gün = 25,78 TB.
-*Parquet'e geçince:* A6'da ölçülecek Parquet ÷ JSON oranı ile (`olcek.py --parquet-orani <oran>`) eklenecek.
+*Parquet'e geçince* (A6'da ölçülen oran: Parquet gzip ÷ JSON = 106,5 ÷ 1.635,5 MB = **0,0651**, Tablo 5.1;
+`olcek.py --parquet-orani 0.0651`): 365 günlük veri **1,68 TB** (10×: 16,78 TB · 100×: 167,83 TB). Tam tarama
+125 MB/s ile 57,3 saatten **3,7 saate** iner — üstelik sütunlu biçimde bir sorgu yalnızca kullandığı sütunları okur
+(H2 §8). H1 §7'ye göre 1,68 TB hâlâ "500 GB – birkaç TB, tek sunucuda zorlanır" bandındadır ve sürekli büyür;
+dağıtık depolama kararı değişmez, ama biçim seçimi okunacak baytı ~15 kat küçültür.
 
 **Ortalamaya mı, tepeye mi göre?** İkisi farklı bileşenler için:
 - *Depolama ortalamaya göre:* günlük ve yıllık toplam, gün boyunca ortalama hızın birikimidir; tepe yalnızca
@@ -173,7 +177,54 @@ bölümlemesiyle yalnızca ilgili günleri okumak. Kit tek makinede çalışır;
   düğümlü küme ve muhtemelen 365 gün yerine daha kısa bir "aranabilir" süre (eski veri yalnızca S3'te) gerekir.
 
 ## 5. Depolama — Z2, Z4, Z7
-*(A6, A10)*
+
+### 5.1 Dosya biçimi (Z2)
+Toplu veri: `uretici.py --grup G231210017 --sablon haber --toplu 5000000 --gun 14` (üretim 237,6 s).
+Ölçüm betiği `is/a6_bicim.py`: aynı ham veri, temizlemeden, dört biçimde; aynı sorgu (`kategori = 'ekonomi'` →
+kaynak başına sayım, yalnızca 2 sütuna dokunur) her biçimde 3 kez. Spark 3.5.3 · kit (`local[*]`, 4 çekirdek,
+sürücü belleği 1 GB). JSON da şema elle verilerek okundu (şema çıkarımının fazladan okuması ölçüme katılmadı).
+
+**Tablo 5.1 — Biçim ve kodek karşılaştırması (5.000.000 satır)**
+
+| Biçim | Boyut | JSON ÷ biçim | Dosya | Sorgu ort. (3 tur) | Turlar (s) |
+|---|---|---|---|---|---|
+| JSON (satır başına bir kayıt) | 1.635,5 MB | 1× | 14 | 4,460 s | 6,97 / 3,34 / 3,07 |
+| Parquet snappy | 196,9 MB | 8,3× | 14 | 0,869 s | 1,64 / 0,49 / 0,48 |
+| Parquet zstd | 121,1 MB | 13,5× | 14 | 0,547 s | 0,66 / 0,50 / 0,48 |
+| Parquet gzip | 106,5 MB | 15,4× | 14 | 0,570 s | 0,55 / 0,59 / 0,57 |
+
+- Dört biçim de birebir aynı sonucu verdi (betik her turda karşılaştırır).
+- İlk tur her biçimde daha yavaş (JVM ısınması, dosya önbelleği — H2 §8'in ölçüm notu); ortalamaya dahil.
+- Yazma süreleri tek ölçüm (snappy 34,9 s · zstd 18,2 s · gzip 17,0 s); snappy ilk sırada yazıldığı için ısınma
+  maliyetini taşıyor → kodek kararına katılmadı.
+- **H2 ile çelişen bulgu:** H2'nin satış verisinde zstd gzip'ten küçüktü; bizim Türkçe haber metinlerimizde
+  gzip %12 daha küçük. H2 §7.5: "sıkışma oranı verinin özelliğidir, biçimin değil" — kendi verimizde ölçmenin nedeni.
+- **Kodek kararı: Parquet + gzip** (grupça, 2026-11-23). Gerekçe: ölçülen tek anlamlı fark boyut — gzip zstd'den
+  %12, snappy'den %46 küçük; sorgu farkı (zstd 0,547 ↔ gzip 0,570 s) tur dağılımının (0,48–0,66 s) içinde kalıyor.
+  Z1'e göre ilk tıkanan aktarım ve depolama olduğu için boyut belirleyici. Ders notunun "depolama kritikse zstd"
+  önerisinden (H2 §11) bilerek ayrıldık: o öneri başka bir verinin ölçümüne dayanıyor.
+- Sütun budaması ve filtre itmesinin planda görünmesi (`ReadSchema`, `PushedFilters`) A8'deki `explain-1.txt` ile gösterilecek.
+
+### 5.2 Nesne deposu ve dosya düzeni (Z4)
+**Dizin düzeni: `tarih=YYYY-MM-DD/`** (grupça, 2026-11-23), hem ham (`s3://ham/haber/tarih=…/`) hem işlenmiş katmanda.
+
+| Aday bölüm sütunu | Değer sayısı | Lehine | Aleyhine |
+|---|---|---|---|
+| **tarih** ✓ | 14 (günde 1) | Toplu 2 ve akış hep tarih aralığıyla sorgular → yalnızca ilgili günler okunur; `olay_zamani` hiç bozulmuyor (Tablo 10.1) | Bir günü tüm kaynaklarıyla okur |
+| kaynak | 6 | Kaynak karşılaştırması (Toplu 1) | Çok çarpık: en büyük kaynak %49,9 (A3) → bir bölüm verinin yarısı; ayrıca 1.993 kayıtta `kaynak` eksik/boş |
+| kategori | 8 | — | Sorgularımızın birincil filtresi değil; tarih × kategori dosya sayısını 8 katına çıkarır (küçük dosya, H4 §5) |
+
+**Dosya sayısı ve boyutu:** ham katman 14 dosya × 116,8 MB; Parquet gzip 14 dosya × ~7,6 MB (106,5 ÷ 14).
+Parquet dosyaları H4 §11'in "yüzlerce MB" ölçütünün altında, ama bu kitteki küçültülmüş örnektir: kartın
+gerçek ölçeğinde günde 70,63 GB ham × 0,0651 ≈ 4,6 GB Parquet düşer — o ölçekte sorun küçük dosya değil, bir
+günün birden çok dosyaya bölünmesi olur. 14 dosya için birleştirme (compaction) gerekmedi.
+
+**Nesne deposunun bedeli (H4 §6.4):** Spark'ın `partitionBy` ile yazdığı çıktı `_temporary/` → asıl dizine
+yeniden adlandırılarak teslim edilir; S3'te bu kopyala + sil'dir, atomik değildir. Yarıda kesilen bir yazma yarım
+bir klasör bırakır ve okuyan iş hata vermeden eksik veri görür → Z7'de Delta ile karşılaştırılacak (A10).
+
+### 5.3 Tablo biçimi (Z7)
+*(A10)*
 
 ## 6. Bölümleme, çoğaltma, tutarlılık — Z3
 *(A7)*
@@ -209,12 +260,39 @@ kelimeler doğru aranamaz. A12'de Türkçe ve standard analizör bu açıdan da 
 Veri sözlüğündeki hiçbir alan doğrudan bir kişiyi tanımlamaz: `kaynak` bir kuruluş adıdır, `haber_id` haberin
 kimliğidir. Kişi adı geçebilecek tek yer serbest metin alanlarıdır (`baslik`, `metin`). 1.502 haberlik akış
 örneğinde metinler kalıplardan üretilmiş 118 farklı kelimeden oluşuyor ve cümle ortasında büyük harfle başlayan
-(özel ad olabilecek) hiçbir kelime yok; kişi adı bulunmadı. **Karar:** maskeleme gerekmiyor; aynı denetim toplu
-veride (milyonlarca kayıt) tekrarlanacak. *Gerçek bir haber akışında* metinde kişi adları olacağı için orada
+(özel ad olabilecek) hiçbir kelime yok; kişi adı bulunmadı. Denetim 5.000.000 satırlık toplu veride tekrarlandı
+(`is/a6_kirli.py`): **117 farklı kelime, cümle ortasında büyük harfli kelime 0.** (118 ↔ 117 farkı: iki sayım kelimeyi
+farklı böler — akışta Python `\w+`, toplu veride Spark boşluğa göre bölme; sonuç aynı: kalıp kelimeler, özel ad yok.)
+**Karar:** maskeleme gerekmiyor. *Gerçek bir haber akışında* metinde kişi adları olacağı için orada
 kişi adlarını ayıklamak ya da saklama süresini sınırlamak gerekirdi; bu not raporda tartışılacak.
 
 ### 10.2 Kirli veri
-*(Tablo A6 ve A8'de toplu veriyle tamamlanacak. Akış örneğindeki ilk sayılar:)*
+
+**Tablo 10.1 — Toplu veride kusurlar (5.000.000 satır, `is/a6_kirli.py`)**
+
+Eksik (alan satırda hiç yok) ile boş (`null`) ayrı sayıldı: şemayla okununca ikisi de `null` görünür, bu yüzden
+ham satırlar metin olarak tarandı.
+
+| Alan | Eksik | Boş |
+|---|---|---|
+| olay_zamani | 0 | 0 |
+| haber_id | 942 | 946 |
+| kaynak | 984 | 1.009 |
+| kategori | 1.002 | 979 |
+| baslik | 994 | 1.044 |
+| metin | 1.025 | 1.026 |
+| **En az bir alanı kusurlu satır** | **9.951 (%0,199)** | |
+
+| Tekrar | Sayı | Yorum |
+|---|---|---|
+| Birebir aynı satır | 9.917 | Üreticinin bildirdiği tekrar sayısıyla aynı (sağlama ✓) |
+| Tekrar eden `haber_id` | 9.914 | 3 eksik: kimliği boş kayıtların kopyaları kimlikle yakalanamaz |
+| `haber_id`'si olmayan satır | 1.888 | Kimliğe göre ayıklama bunları tek kayda indirip 1.887 haberi sessizce silerdi |
+
+**A8 için sonuç:** tekrar ayıklama birebir satıra göre yapılmalı; kimliksiz kayıtlar için ayrı karar (A8).
+`olay_zamani` hiç bozulmuyor (üretici bu alanı kirletmiyor) → olay zamanına göre bölümleme güvenli.
+
+*Akış örneğindeki ilk sayılar (A3):*
 
 | Kusur | Akış örneği (1.502 mesaj) | Örnek | Ne yapacağız |
 |---|---|---|---|
@@ -236,6 +314,9 @@ Dönem boyunca yaşanan ya da öngörülen kırılmaların ham listesi (sonra ta
 | Ortam farkı sağlık denetimini kırdı | Windows'ta kapsayıcı içinde `localhost` → `::1` (IPv6); SeaweedFS yalnızca IPv4 dinliyor | `bsm461-s3` "unhealthy"; ona bağlı spark, araclar, s3-kur hiç başlamadı | Denetimde `127.0.0.1` kullanıldı. Ders: sağlık denetimi de bir bağımlılıktır; denetim yanlışsa sağlam servis "ölü" sayılır |
 | Port çakışması | Aynı makinede başka bir Kafka 9092'de | `docker compose up` portu alamaz | Dış port 9094 yapıldı, kapsayıcı içi aynı kaldı |
 | Tek bölüme yığılma | Anahtar = `kaynak`, en büyük kaynak %49,9 | En dolu bölüm ortalamanın 1,64 katı | A11'de anahtar/bölüm tasarımı |
+| Önbellek belleği doldurdu | `is/a6_kirli.py` ilk sürümü 1,6 GB ham metni `cache()` ile belleğe aldı; sürücü belleği 1 GB | GC uyarıları ("GCLocker… too often"), ardından executor kaybı, `Block rdd_3_1 does not exist` — kanıt `kanit/kirilma-a6-cache-oom.log` | `cache()` kaldırıldı, iş tamamlandı. H6 §3.4: yalnızca belleğe sığan ara sonuç önbelleğe alınır. Üretimde: executor belleği veriye göre boyutlandırılır, `persist(MEMORY_AND_DISK)` |
+| Bellek baskısı (yazma) | `partitionBy(tarih)` ile Parquet yazarken her görev aynı anda 8–12 dosya açık tutuyor | `MemoryManager: Total allocation exceeds 95%… Scaling row group sizes to 63%` | Row group'lar küçülüyor (Parquet verimi düşer); A6'da bilinçli kabul. Üretimde daha çok bellek ya da yazmadan önce `repartition("tarih")` (her görev tek tarih yazar) |
+| Kirli anahtar | `kaynak` alanı boş/eksik kayıt | Gruplamada `None` grubu (ekonomi'de 274 haber); Python tarafında sıralama çöktü | Kirli kayıtlar temizlenmeden toplulaştırılmamalı (A8) |
 | Satır sonu (CRLF) | Windows'ta klonlanan `bin/spark-submit` CRLF'e dönerse | Bütün `spark-submit` çağrıları başarısız | `.gitattributes` ile LF zorunlu (kitte var) |
 
 ## 12. Yapay zekâ kullanım beyanı — Z12

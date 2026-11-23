@@ -1,0 +1,32 @@
+	at java.lang.Thread.run(Thread.java:840) [?:?]
+[39.826s][warning][gc,alloc] Executor task launch worker for task 1.0 in stage 0.0 (TID 1): Retried waiting for GCLocker too often allocating 413516 words
+11:29:57 ERROR Utils: Uncaught exception in thread Executor task launch worker for task 1.0 in stage 0.0 (TID 1)
+java.lang.NullPointerException: Cannot invoke "org.apache.spark.SparkEnv.blockManager()" because the return value of "org.apache.spark.SparkEnv$.get()" is null
+	at org.apache.spark.scheduler.Task.$anonfun$run$3(Task.scala:146) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.Utils$.tryLogNonFatalError(Utils.scala:1375) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.scheduler.Task.run(Task.scala:144) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64) [spark-common-utils_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61) [spark-common-utils_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94) [spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623) [spark-core_2.12-3.5.3.jar:3.5.3]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635) [?:?]
+	at java.lang.Thread.run(Thread.java:840) [?:?]
+11:29:57 ERROR Executor: Exception in task 1.0 in stage 0.0 (TID 1): Block rdd_3_1 does not exist
+11:29:57 ERROR Utils: Uncaught exception in thread Executor task launch worker for task 9.0 in stage 0.0 (TID 9)
+java.lang.NullPointerException: Cannot invoke "org.apache.spark.SparkEnv.blockManager()" because the return value of "org.apache.spark.SparkEnv$.get()" is null
+	at org.apache.spark.scheduler.Task.$anonfun$run$3(Task.scala:146) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.Utils$.tryLogNonFatalError(Utils.scala:1375) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.scheduler.Task.run(Task.scala:144) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:620) ~[spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64) [spark-common-utils_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61) [spark-common-utils_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94) [spark-core_2.12-3.5.3.jar:3.5.3]
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:623) [spark-core_2.12-3.5.3.jar:3.5.3]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635) [?:?]
+	at java.lang.Thread.run(Thread.java:840) [?:?]
+11:29:57 ERROR Executor: Exception in task 9.0 in stage 0.0 (TID 9): Block rdd_3_9 does not exist
+
+[exited with code 0]

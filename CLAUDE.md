@@ -74,7 +74,7 @@ Bitenleri [x] yap, tarih ve kısa not ekle.
 - [x] A5 Z0 mimari taslağı + garanti tablosu iskeleti — 2026-11-23: taslak §3 (Şekil 3.1, Tablo 3.1 garanti iskeleti H3 §10 biçiminde, Tablo 3.2 sadeleştirmeler). "?" hücreleri ilgili adımlarda dolacak. **Grubun üç üyesinin onayı bekleniyor** (yönerge: üç üye anlaşmış olmalı).
 
 ### Aşama 2 — Depolama ve toplu (25–29 Kas)
-- [ ] A6 `--toplu` üretim; JSON/Parquet boyut ve sorgu süresi; snappy/zstd/gzip; S3 dizin düzeni ve dosya sayısı; kirli veri sayımı
+- [x] A6 (2026-11-23: 5M satır/14 gün; `is/a6_bicim.py` biçim+kodek 3 tur; `is/a6_kirli.py` kirli/tekrar/KVKK; taslak §4, §5.1, §5.2, §10.2. Kararlar: Parquet+gzip, `tarih=` düzeni) `--toplu` üretim; JSON/Parquet boyut ve sorgu süresi; snappy/zstd/gzip; S3 dizin düzeni ve dosya sayısı; kirli veri sayımı
 - [ ] A7 Bölüm anahtarı adayları (kaynak, kategori, tarih); en dolu ÷ ortalama; tuzlama önce/sonra; tekrar eden olay sayısı; CAP/PACELC
 - [ ] A8 Toplu iş: temizleme + kaynaklar.csv join + toplulaştırma; `explain` → `kanit/explain-1.txt` + yorum; Spark UI ekran görüntüsü; performans kararı (3 tekrar); kirli veri kararı; 2 grafik
 - [ ] A10 Delta: ikinci yazma, DESCRIBE HISTORY, versionAsOf, Ctrl+C atomiklik deneyi (Delta ile çıplak Parquet karşılaştırması)
@@ -101,4 +101,8 @@ Bitenleri [x] yap, tarih ve kısa not ekle.
 - **2026-11-23 · S3 sağlık denetimi `localhost` → `127.0.0.1`** (docker-compose.yml). Windows'ta kapsayıcı içinde `localhost` önce `::1`'e çözülüyor; SeaweedFS yalnızca IPv4 dinliyor → denetim hep başarısız, spark/araclar hiç başlamıyordu. Kanıt: `wget localhost:9333` reddedildi, `127.0.0.1:9333` exit 0. Z11 adayı (ortam farkı bağımlı servisleri durdurdu). README'de belirtilecek.
 - **2026-11-23 · Kafka dış portu `9094:9092`** (docker-compose.yml). Kullanıcının başka projesi (`kayma-izleme`) 9092'yi kullanıyor. Kapsayıcı içi aynı: araçlar `kafka:29092`, yönergedeki `exec kafka … localhost:9092` komutları değişmeden çalışır. Bedel: Windows'tan doğrudan bağlanan istemci, duyurulan `localhost:9092`'ye yönlenir (bizde yok). README'de belirtilecek.
 - **2026-11-23 · Git Bash'te `dogrula.sh` → `MSYS_NO_PATHCONV=1` gerekli.** Yoksa `name=^/bsm461-kafka$` filtresi yol dönüşümüyle bozulur, yanlış ❌ verir. PowerShell'de `dogrula.py` + `dogrula_spark.py` kullanılabilir.
+- **2026-11-23 · Kodek: Parquet + gzip.** Ölçüm (5M satır, 3 tur): gzip 106,5 MB · zstd 121,1 · snappy 196,9 · JSON 1.635,5; sorgu zstd 0,547 s ≈ gzip 0,570 s (tur farkı içinde). H2'nin zstd önerisinden ölçüme dayanarak ayrıldık (bizim veride gzip %12 küçük). Parquet/JSON = 0,0651 → Z1: 365 gün 1,68 TB.
+- **2026-11-23 · S3 düzeni: `tarih=YYYY-MM-DD/`.** Sorgular tarih aralıklı; kaynak çok çarpık (%49,9); kategori dosya sayısını 8× artırır. 14 dosya, compaction gerekmedi.
+- **2026-11-23 · Tekrar ayıklama birebir satıra göre yapılacak (A8).** haber_id'ye göre: 9.914 (3 kaçar) + 1.888 kimliksiz kayıt tek kayda çöker. Birebir satır: 9.917 = üreticinin sayısı.
+- **2026-11-23 · cache() dersi:** 1,6 GB'ı 1 GB sürücüde cache'lemek işi çökertti (kanit/kirilma-a6-cache-oom.log). Kitte büyük ara sonucu cache'leme.
 - **Hipotez (karar değil, ölçülecek) · watermark:** kart 5 s uyarı ↔ 30 dk geç veri ↔ ≤ %0,1 kayıp çelişkisi. Öneri: `update` çıktı kipi + kısa tetikleyici (uyarı süresi için) + uzun watermark (kayıp sınırı için) + MongoDB upsert. Watermark süresi geç veri dağılımı ölçülünce belirlenecek.
