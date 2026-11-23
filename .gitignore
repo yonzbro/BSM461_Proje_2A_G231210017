@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.DS_Store
+spark-warehouse/
+.env
+node_modules/
