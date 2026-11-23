@@ -1,0 +1,13 @@
+tarih,adim,ne,kac_kez,sonuc,birim,veri_boyutu,nasil
+2026-11-23,A3,ortalama JSON boyutu / olay,1,327,bayt,1502 mesaj (akış 30 s × 50/s),analiz/veri_tani.py
+2026-11-23,A3,kirli kayıt oranı (eksik alan ya da boş değer),1,0.20,%,1502 mesaj,analiz/veri_tani.py (3 kayıt: haber_id boş=1 · metin null=2)
+2026-11-23,A3,tekrar eden olay (aynı haber_id),1,2,mesaj,1502 mesaj,analiz/veri_tani.py (kopyalar içerikçe birebir aynı)
+2026-11-23,A3,geç olay oranı (gönderim − olay_zamani > 5 s),1,4.93,%,1502 mesaj,analiz/veri_tani.py (74 olay)
+2026-11-23,A3,geç olay gecikmesi en az / ortanca / en çok,1,1.1 / 15.7 / 30.0,dk,74 geç olay,analiz/veri_tani.py
+2026-11-23,A3,en büyük kaynağın payı (ajans-kuzey),1,49.9,%,1502 mesaj,analiz/veri_tani.py
+2026-11-23,A3,Kafka bölüm dengesi en dolu ÷ ortalama (3 bölüm · anahtar=kaynak),1,1.64,oran,1502 mesaj,analiz/veri_tani.py (bölüm 0/1/2 = 293/819/390)
+2026-11-23,A3,metin+başlıktaki farklı kelime sayısı,1,118,kelime,1502 mesaj,tek seferlik Python sayımı (re \w+; KVKK kontrolü — cümle ortasında büyük harfli kelime: 0)
+2026-11-23,A3,"""yapay"" kelimesi geçen haber",1,1171,haber (/ 1500),1502 mesaj,tek seferlik Python sayımı (gündem sinyali)
+2026-11-22,A4,geliştirme makinesi RAM,1,15.7,GB,-,PowerShell Win32_ComputerSystem.TotalPhysicalMemory
+2026-11-22,A4,geliştirme makinesi boş disk (C:),1,360.8,GB,-,PowerShell Get-PSDrive C
+2026-11-23,A4,Docker'a ayrılan bellek (WSL 2 varsayılanı),1,8.17,GB,-,docker info MemTotal = 8173412352 bayt

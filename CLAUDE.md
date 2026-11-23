@@ -24,11 +24,13 @@ uretici.py ──▶ Kafka (haberler) ──▶ Spark Structured Streaming ─�
                             Portal (FastAPI + React) — portal/
 ```
 
-## Sorular (taslak — grup onaylayacak)
-- Akış 1: Son 1 saatte başlıklarda en çok geçen konular (kayan pencere).
-- Akış 2: Kategori başına dakikalık haber hızı; senaryo kartındaki eşik aşılınca uyarı.
-- Toplu 1: Kaynak karşılaştırması (kaynak × kategori hacmi, gecikme), kaynaklar.csv ile join.
-- Toplu 2: Konuların günler boyunca seyri.
+## Sorular (2026-11-23 kabul edildi — ayrıntı `docs/rapor-taslak.md` §2)
+- Akış 1: Son 1 saatte başlıklarda en çok geçen 10 konu (1 sa kayan pencere, dakikada bir güncelleme).
+- Akış 2: Kategori başına dakikalık haber hızı normalin X katını aşınca uyarı (≤ 5 s). X toplu veriden ölçülecek, uydurulmayacak.
+- Toplu 1: Kaynak türüne göre (kaynaklar.csv join) hacim ve kategori dağılımı.
+- Toplu 2: Gündem konularının günler/saatler boyunca seyri.
+
+Rapor taslağı: `docs/rapor-taslak.md` (Bölüm 6 başlıklarıyla; her adımda ilgili bölüm doldurulur).
 
 ## Portal
 - Mehmet Salih'in önceki projesi "AI-Destekli-Haber-Portali" uyarlanıyor (FastAPI + React/Vite/Tailwind). Rapordaki YZ ve katkı beyanında bu kökeni belirt.
@@ -66,8 +68,8 @@ Bitenleri [x] yap, tarih ve kısa not ekle.
 ### Aşama 1 — Başlangıç (22–24 Kas)
 - [ ] A1 Grup, grup kodu, açık GitHub deposu, kit kopyalandı — 2026-11-23: grup kodu belli; kit `github.com/sumeyyekaynak/bsm461-proje-kit`'ten (11d3993) depo köküne kopyalandı; yerel `git init` yapıldı, commit yok. Eksik: şube, GitHub deposu.
 - [x] A2 `docker compose up -d` + `./dogrula.sh --tam` → `kanit/ortam.png` — 2026-11-23: hepsi ✅, `kanit/ortam.png` kaydedildi (PowerShell çıktısı).
-- [ ] A3 Senaryo kartı (2026-11-23 alındı ✅) → `kanit/senaryo.txt`; veri sözlüğü; 4 kusura (çarpık anahtar, geç olay, tekrar, kirli kayıt) birer örnek; 4 soru kesinleşti; KVKK notu (metinde kişi adları)
-- [ ] A4 Z1 ölçek hesabı (olay/s × bayt × 86400 × saklama günü; 10× ve 100×)
+- [x] A3 Senaryo kartı → `kanit/senaryo.txt`; veri sözlüğü; 4 kusura birer örnek; 4 soru; KVKK notu — 2026-11-23: `analiz/veri_tani.py` ile 1.502 akış mesajı incelendi, sayılar `kanit/olcumler.csv`'de, metin `docs/rapor-taslak.md`'de. KVKK: kişi adı YOK (118 kalıp kelime) — toplu veride tekrar kontrol edilecek. Önemli bulgular: anahtar=kaynak çarpık (%49,9, bölüm dengesi 1,64); boş haber_id tekrar ayıklamayı bozar; Python `lower()` "İ" sorunu.
+- [x] A4 Z1 ölçek hesabı — 2026-11-23: `analiz/olcek.py`; 70,63 GB/gün, 25,78 TB/yıl; ilk tıkanan aktarım + depolama (tam tarama 57,3 sa, disk 5,1 günde dolar); 100×'te tepe 163,5 MB/s > 1 Gb/s. Taslak §4. Eksik: Parquet oranı (A6'dan sonra `--parquet-orani`). Not: H1 çalışma notlarında "1 GB → 3–5 GB" bellek çarpanı PDF metninde "35" olarak bozuk çıktı; slayttan teyit et.
 - [ ] A5 Z0 mimari taslağı + garanti tablosu iskeleti
 
 ### Aşama 2 — Depolama ve toplu (25–29 Kas)
